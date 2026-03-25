@@ -56,7 +56,7 @@ book-service/
 
 ---
 
-## Getting Started (Local)
+## Getting Started
 
 ### Prerequisites
 
@@ -67,7 +67,7 @@ book-service/
 ### 1. Install
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/sandyxd18/book-svc-devsecops.git
 cd book-service
 bun install
 ```
