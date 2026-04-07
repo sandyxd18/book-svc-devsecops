@@ -1,6 +1,6 @@
 # 📚 Book Service
 
-Production-ready book microservice with MinIO/S3 image storage, built with **Bun**, **Express**, **PostgreSQL**, **Prisma**, and **AWS SDK v3**.
+Production-ready book microservice with MinIO/S3 image storage, built with **Bun**, **Express**, **PostgreSQL**, **Prisma**, and **AWS SDK v3** — fully instrumented with metrics, logs, and distributed tracing via the Grafana observability stack.
 
 ---
 
@@ -13,8 +13,12 @@ Production-ready book microservice with MinIO/S3 image storage, built with **Bun
 | Database | PostgreSQL + Prisma |
 | Object Storage | MinIO (S3-compatible, AWS SDK v3) |
 | Auth | JWT (shared secret with auth-service) |
+| File Upload | Multer (memory storage) |
 | Validation | Zod |
-| Logging | Winston (structured JSON) |
+| Metrics | prom-client → Prometheus |
+| Logs | Winston (JSON) → Alloy → Loki |
+| Traces | OpenTelemetry → Alloy → Tempo |
+| Visualization | Grafana |
 
 ---
 
@@ -23,34 +27,34 @@ Production-ready book microservice with MinIO/S3 image storage, built with **Bun
 ```
 book-service/
 ├── prisma/
-│   └── schema.prisma           # books table schema
+│   └── schema.prisma              # books table schema
 ├── src/
 │   ├── config/
-│   │   └── env.ts              # Env var validation & typed access
+│   │   └── env.ts                 # Env var validation & typed access
 │   ├── controllers/
-│   │   └── book.controller.ts  # HTTP layer — parse, validate, respond
+│   │   └── book.controller.ts     # HTTP layer — parse, validate, respond
 │   ├── db/
-│   │   └── prisma.ts           # Prisma client singleton
+│   │   └── prisma.ts              # Prisma client singleton
 │   ├── middleware/
-│   │   ├── auth.ts             # authenticateJWT + authorizeRole
-│   │   ├── errorHandler.ts     # Global error handler (incl. Multer errors)
-│   │   └── upload.ts           # Multer memoryStorage config
+│   │   ├── auth.ts                # authenticateJWT + authorizeRole
+│   │   ├── errorHandler.ts        # Global error handler (incl. Multer errors)
+│   │   └── upload.ts              # Multer memoryStorage config
 │   ├── routes/
-│   │   └── book.routes.ts      # Route definitions
+│   │   └── book.routes.ts         # Route definitions
 │   ├── services/
-│   │   └── book.service.ts     # Business logic (DB + storage coordination)
+│   │   └── book.service.ts        # Business logic (DB + storage coordination)
 │   ├── storage/
-│   │   └── s3.ts               # MinIO/S3 integration (upload, delete)
+│   │   └── s3.ts                  # MinIO/S3 integration (upload, delete)
 │   ├── utils/
-│   │   ├── logger.ts           # Winston JSON logger
-│   │   ├── response.ts         # Standardized API response helpers
-│   │   └── validators.ts       # Zod schemas
-│   ├── app.ts                  # Express factory
-│   └── server.ts               # Entry point
+│   │   ├── logger.ts              # Winston JSON logger
+│   │   ├── response.ts            # Standardized API response helpers
+│   │   └── validators.ts          # Zod schemas
+│   ├── app.ts                     # Express factory + /metrics endpoint
+│   └── server.ts                  # Entry point
 ├── .dockerignore
 ├── .env.example
-├── Dockerfile                  # Multi-stage production image
-├── entrypoint.sh               # DB schema sync → start server
+├── Dockerfile                     # Multi-stage production image
+├── entrypoint.sh                  # DB schema sync → start server
 └── package.json
 ```
 
@@ -67,7 +71,6 @@ book-service/
 ### 1. Install
 
 ```bash
-git clone https://github.com/sandyxd18/book-svc-devsecops.git
 cd book-service
 bun install
 ```
@@ -89,6 +92,12 @@ S3_REGION="us-east-1"
 S3_PUBLIC_URL="http://localhost:9000"
 PORT=8000
 NODE_ENV="development"
+
+# Observability
+SERVICE_NAME="book-service"
+SERVICE_VERSION="1.0.0"
+OTEL_EXPORTER_OTLP_ENDPOINT="http://alloy:4317"
+LOKI_HOST="http://loki:3100"
 ```
 
 ### 3. MinIO Setup
@@ -129,6 +138,7 @@ bun run start   # production
 | Method | Endpoint | Auth | Role | Description |
 |---|---|---|---|---|
 | GET | `/health` | — | — | Health check |
+| GET | `/metrics` | — | — | Prometheus metrics scrape |
 | GET | `/books` | — | — | List books (paginated) |
 | GET | `/books/:id` | — | — | Get book detail |
 | POST | `/books` | ✅ JWT | admin | Create book + upload image |
@@ -177,6 +187,8 @@ GET /books?page=1&limit=10
 
 ### GET /books/:id
 
+Get detailed information for a single book.
+
 ```
 GET /books/550e8400-e29b-41d4-a716-446655440000
 ```
@@ -210,7 +222,7 @@ GET /books/550e8400-e29b-41d4-a716-446655440000
 Create a book with an optional cover image.
 
 **Content-Type:** `multipart/form-data`
-**Authorization:** `Bearer <admin-token>`
+**Headers:** `Authorization: Bearer <admin-token>`
 
 | Field | Type | Required | Description |
 |---|---|---|---|
@@ -219,17 +231,6 @@ Create a book with an optional cover image.
 | `price` | number | ✅ | Price ≥ 0 |
 | `stock` | integer | ✅ | Stock quantity ≥ 0 |
 | `image` | file | ❌ | jpg/png, max 2MB |
-
-**Example (curl):**
-```bash
-curl -X POST http://localhost:8000/books \
-  -H "Authorization: Bearer <admin-token>" \
-  -F "title=Clean Code" \
-  -F "author=Robert C. Martin" \
-  -F "price=35.99" \
-  -F "stock=50" \
-  -F "image=@/path/to/cover.jpg"
-```
 
 **201 Created:**
 ```json
@@ -270,16 +271,9 @@ curl -X POST http://localhost:8000/books \
 Update book fields. Image is replaced if a new file is provided (old image is deleted from MinIO).
 
 **Content-Type:** `multipart/form-data`
-**Authorization:** `Bearer <admin-token>`
+**Headers:** `Authorization: Bearer <admin-token>`
 
 All fields are optional.
-
-```bash
-curl -X PUT http://localhost:8000/books/<id> \
-  -H "Authorization: Bearer <admin-token>" \
-  -F "price=29.99" \
-  -F "stock=100"
-```
 
 **200 OK:**
 ```json
@@ -304,12 +298,7 @@ curl -X PUT http://localhost:8000/books/<id> \
 
 Deletes the book record **and** its image from MinIO.
 
-**Authorization:** `Bearer <admin-token>`
-
-```bash
-curl -X DELETE http://localhost:8000/books/<id> \
-  -H "Authorization: Bearer <admin-token>"
-```
+**Headers:** `Authorization: Bearer <admin-token>`
 
 **200 OK:**
 ```json
@@ -329,13 +318,6 @@ curl -X DELETE http://localhost:8000/books/<id> \
 | URL pattern | `<S3_PUBLIC_URL>/<bucket>/books/<uuid>.<ext>` |
 | Deletion | Auto-deleted from MinIO on book delete or image replace |
 
-**File naming strategy:**
-```
-books/<uuid>.jpg
-books/<uuid>.png
-```
-Client-supplied filenames are discarded entirely. The path never contains user input, preventing path traversal attacks.
-
 ---
 
 ## RBAC
@@ -348,16 +330,87 @@ Client-supplied filenames are discarded entirely. The path never contains user i
 | Update book | ❌ 403 | ✅ |
 | Delete book | ❌ 403 | ✅ |
 
-The JWT payload is expected in this format (same as auth-service output):
-```json
-{
-  "sub": "user-uuid",
-  "username": "alice",
-  "role": "user",
-  "iat": 1700000000,
-  "exp": 1700003600
-}
+---
+
+## Example API Usage (curl)
+
+```bash
+BASE=http://localhost:3001
+
+# 1. Login to get JWT token (via auth-service)
+TOKEN=$(curl -s -X POST http://localhost:3000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"Admin@1234!"}' \
+  | jq -r '.data.token')
+
+# 2. Create a book with image
+curl -X POST $BASE/books \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "title=Clean Code" \
+  -F "author=Robert C. Martin" \
+  -F "price=35.99" \
+  -F "stock=50" \
+  -F "image=@/path/to/cover.jpg"
+
+# 3. List books
+curl "$BASE/books?page=1&limit=10"
+
+# 4. Get book detail
+curl $BASE/books/<book-uuid>
+
+# 5. Update book
+curl -X PUT $BASE/books/<book-uuid> \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "price=29.99" \
+  -F "stock=100"
+
+# 6. Delete book
+curl -X DELETE $BASE/books/<book-uuid> \
+  -H "Authorization: Bearer $TOKEN"
+
+# Health check
+curl $BASE/health
 ```
+
+---
+
+## 📊 Observability
+
+### Architecture
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                  book-service :3001                        │
+│                                                            │
+│  /metrics  ──────────────────────────► Prometheus          │
+│  stdout (JSON logs) ─────► Alloy ───► Loki                │
+│  OTLP traces (gRPC) ─────► Alloy ───► Tempo               │
+└──────────────────────────────────────────────────────────┘
+                                             │
+                                             ▼
+                                         Grafana :8000
+                              (metrics + logs + traces correlated)
+```
+
+### Signal Pipeline
+
+| Signal | Produced by | Collector | Storage |
+|---|---|---|---|
+| **Metrics** | `prom-client` → `/metrics` | Prometheus scrape | Prometheus TSDB |
+| **Logs** | `Winston` JSON → stdout | Alloy Docker scrape | Loki |
+| **Traces** | `OpenTelemetry` → OTLP/gRPC | Alloy OTLP receiver | Tempo |
+
+### Prometheus Metrics
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `http_requests_total` | Counter | `method`, `route`, `status_code` | Total HTTP requests |
+| `http_request_duration_seconds` | Histogram | `method`, `route`, `status_code` | Request latency |
+| `http_requests_in_flight` | Gauge | `method`, `route` | Active requests |
+| `book_operations_total` | Counter | `operation`, `status` | CRUD operations |
+| `storage_operations_total` | Counter | `operation`, `status` | MinIO upload/delete |
+| `storage_operation_duration_seconds` | Histogram | `operation` | MinIO latency |
+| `storage_upload_bytes` | Histogram | — | Upload size distribution |
 
 ---
 
@@ -381,132 +434,5 @@ The JWT payload is expected in this format (same as auth-service output):
 - `image_key` (internal MinIO path) is **never returned** in API responses
 - JWT validated locally using shared secret — no runtime call to auth-service
 - All SQL queries via Prisma ORM — no raw SQL, no injection surface
-- `readOnlyRootFilesystem: true` in Kubernetes pod spec
-- Non-root container user (UID 1001) in both Docker and Kubernetes
-
----
-
-## 📊 Observability
-
-### Arsitektur
-
-```
-┌──────────────────────────────────────────────────────────┐
-│                   book-service :8000                      │
-│                                                          │
-│  /metrics  ──────────────────────────► Prometheus        │
-│  stdout (JSON logs) ─────► Alloy ───► Loki               │
-│  OTLP traces (gRPC) ─────► Alloy ───► Tempo              │
-└──────────────────────────────────────────────────────────┘
-                                             │
-                                             ▼
-                                         Grafana :3001
-                              (metrics + logs + traces correlated)
-```
-
-### Signal Pipeline
-
-| Signal | Diproduksi oleh | Collector | Storage |
-|---|---|---|---|
-| **Metrics** | `prom-client` → `/metrics` | Prometheus scrape | Prometheus TSDB |
-| **Logs** | `Winston` JSON → stdout | Alloy Docker scrape | Loki |
-| **Traces** | `OpenTelemetry` → OTLP/gRPC | Alloy OTLP receiver | Tempo |
-
-### Prometheus Metrics
-
-| Metric | Type | Labels | Deskripsi |
-|---|---|---|---|
-| `http_requests_total` | Counter | `method`, `route`, `status_code` | Total HTTP requests |
-| `http_request_duration_seconds` | Histogram | `method`, `route`, `status_code` | Request latency |
-| `http_requests_in_flight` | Gauge | `method`, `route` | Active requests |
-| `book_operations_total` | Counter | `operation`, `status` | CRUD operations |
-| `storage_operations_total` | Counter | `operation`, `status` | MinIO upload/delete |
-| `storage_operation_duration_seconds` | Histogram | `operation` | MinIO latency |
-| `storage_upload_bytes` | Histogram | — | Upload size distribution |
-
----
-
-### Service URLs
-
-| Service | URL | Credentials |
-|---|---|---|
-| **Book API** | http://localhost:8000 | — |
-| **MinIO Console** | http://localhost:9001 | minioadmin / minioadmin |
-| **Grafana** | http://localhost:3001 | admin / admin |
-| **Prometheus** | http://localhost:9090 | — |
-| **Alloy UI** | http://localhost:12345 | — |
-
-### Boot Sequence
-
-```
-[entrypoint] Syncing database schema...
-🚀  Your database is now in sync with your Prisma schema.
-[entrypoint] Starting server...
-[Tracer] OpenTelemetry SDK started → http://alloy:4317
-{"message":"db_connected","service":"book-service"}
-{"message":"server_started","port":8000}
-```
-
-### MinIO Bucket Init
-
-Service `minio-init` otomatis membuat bucket `books` dan set access policy ke `public` saat pertama kali dijalankan. Bucket public artinya image URL bisa diakses langsung tanpa pre-signed token.
-
----
-
-## Grafana — Menggunakan Dashboard
-
-### Pre-built Dashboard
-
-Grafana auto-provisions dashboard **"Book Service — Overview"** saat boot.
-
-`Grafana → Dashboards → Book Service → Book Service — Overview`
-
-Panels yang tersedia:
-- Request rate, error rate, p95 latency, in-flight requests
-- Request rate per route
-- Book CRUD operations breakdown
-- MinIO upload/delete operations
-- MinIO upload latency (p95)
-- Upload size distribution
-- Live log stream dari Loki
-
-### Explore — Logs
-
-```logql
-# Semua log book-service
-{service_name="book_service"}
-
-# Hanya error
-{service_name="book_service"} | json | level="error"
-
-# Trace ke log berdasarkan trace_id
-{service_name="book_service"} | json | trace_id="<id>"
-```
-
-### Explore — Traces
-
-```
-Grafana → Explore → datasource: Tempo
-Service Name: book-service
-```
-
-Dari span manapun → klik **"Logs for this span"** → langsung jump ke Loki log yang berkorelasi.
-
-### Useful PromQL Queries
-
-```promql
-# Request rate per route
-sum(rate(http_requests_total{service="book-service"}[1m])) by (route, method)
-
-# MinIO upload success rate
-rate(storage_operations_total{operation="upload", status="success"}[5m])
-
-# MinIO upload p95 latency (ms)
-histogram_quantile(0.95, sum(rate(storage_operation_duration_seconds_bucket{operation="upload"}[5m])) by (le)) * 1000
-
-# Average upload size (bytes)
-histogram_quantile(0.50, sum(rate(storage_upload_bytes_bucket[5m])) by (le))
-
-# Book creation rate
-rate(book_operations_total{operation="create", status="success"}[5m])
-```
+- Non-root container user (UID 1001) in Docker
+- `x-powered-by` header disabled
