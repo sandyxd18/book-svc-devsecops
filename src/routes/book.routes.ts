@@ -3,7 +3,7 @@
 
 import { Router } from "express";
 import { BookController } from "../controllers/book.controller";
-import { authenticateJWT, authorizeRole } from "../middleware/auth";
+import { authenticateJWT, authorizeRole, authenticateInternalService } from "../middleware/auth";
 import { uploadImage } from "../middleware/upload";
 
 const router = Router();
@@ -49,6 +49,13 @@ router.delete(
   authenticateJWT,
   authorizeRole("admin"),
   BookController.deleteBook
+);
+
+/** Deduct stock (internal service only) */
+router.patch(
+  "/:id/deduct-stock",
+  authenticateInternalService,
+  BookController.deductStock
 );
 
 export default router;

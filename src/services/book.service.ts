@@ -25,7 +25,7 @@ export const BookService = {
         take:    limit,
         orderBy: { created_at: "desc" },
         select: {
-          id: true, title: true, author: true,
+          id: true, title: true, author: true, description: true,
           price: true, stock: true, image_url: true, created_at: true,
         },
       }),
@@ -43,7 +43,7 @@ export const BookService = {
     const book = await prisma.book.findUnique({
       where: { id },
       select: {
-        id: true, title: true, author: true, price: true,
+        id: true, title: true, author: true, description: true, price: true,
         stock: true, image_url: true, created_at: true, updated_at: true,
       },
     });
@@ -72,7 +72,7 @@ export const BookService = {
     const book = await prisma.book.create({
       data: { ...input, image_url, image_key },
       select: {
-        id: true, title: true, author: true,
+        id: true, title: true, author: true, description: true,
         price: true, stock: true, image_url: true, created_at: true,
       },
     });
@@ -104,15 +104,16 @@ export const BookService = {
     const book = await prisma.book.update({
       where: { id },
       data: {
-        ...(input.title  !== undefined && { title:  input.title }),
-        ...(input.author !== undefined && { author: input.author }),
-        ...(input.price  !== undefined && { price:  input.price }),
-        ...(input.stock  !== undefined && { stock:  input.stock }),
-        ...(image_url    !== undefined && { image_url }),
-        ...(image_key    !== undefined && { image_key }),
+        ...(input.title       !== undefined && { title:       input.title }),
+        ...(input.author      !== undefined && { author:      input.author }),
+        ...(input.description !== undefined && { description: input.description }),
+        ...(input.price       !== undefined && { price:       input.price }),
+        ...(input.stock       !== undefined && { stock:       input.stock }),
+        ...(image_url         !== undefined && { image_url }),
+        ...(image_key         !== undefined && { image_key }),
       },
       select: {
-        id: true, title: true, author: true,
+        id: true, title: true, author: true, description: true,
         price: true, stock: true, image_url: true, updated_at: true,
       },
     });
@@ -140,6 +141,26 @@ export const BookService = {
     }
 
     recordOp("delete", "success", { book_id: id, had_image: !!existing.image_key });
+  },
+
+  async deductStock(id: string, quantity: number) {
+    const existing = await prisma.book.findUnique({ where: { id } });
+    if (!existing) {
+      recordOp("deduct_stock", "failure", { reason: "not_found", book_id: id });
+      throw new NotFoundError("Book not found");
+    }
+    if (existing.stock < quantity) {
+      recordOp("deduct_stock", "failure", { reason: "insufficient_stock", book_id: id });
+      throw new Error("Insufficient stock");
+    }
+
+    const book = await prisma.book.update({
+      where: { id },
+      data: { stock: { decrement: quantity } }
+    });
+
+    recordOp("deduct_stock", "success", { book_id: id, quantity });
+    return book;
   },
 };
 

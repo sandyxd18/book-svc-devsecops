@@ -8,6 +8,20 @@ import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 import { sendError } from "../utils/response";
 
+// ── Internal Service Auth ───────────────────────────────────────────────────
+export function authenticateInternalService(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  const secret = req.headers["x-internal-secret"];
+  if (!secret || secret !== env.INTERNAL_SERVICE_SECRET) {
+    sendError(res, "Forbidden: invalid internal service secret", 403);
+    return;
+  }
+  next();
+}
+
 // ── JWT Payload shape (matches auth-service token) ────────────────────────────
 export interface JwtPayload {
   sub:      string;   // user id

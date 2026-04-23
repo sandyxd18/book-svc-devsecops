@@ -106,4 +106,24 @@ export const BookController = {
       else next(err);
     }
   },
+
+  /**
+   * PATCH /books/:id/deduct-stock
+   * Internal service-to-service endpoint to deduct stock
+   */
+  async deductStock(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const quantity = parseInt(req.body.quantity, 10);
+      if (isNaN(quantity) || quantity <= 0) {
+        sendError(res, "Invalid quantity", 400);
+        return;
+      }
+      const book = await BookService.deductStock(req.params.id, quantity);
+      sendSuccess(res, book, "Stock deducted successfully");
+    } catch (err) {
+      if (err instanceof NotFoundError) sendError(res, err.message, 404);
+      else if (err instanceof Error && err.message === "Insufficient stock") sendError(res, err.message, 400);
+      else next(err);
+    }
+  },
 };

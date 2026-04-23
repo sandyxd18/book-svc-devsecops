@@ -42,4 +42,7 @@ export const env = {
   SERVICE_VERSION: process.env.SERVICE_VERSION ?? "1.0.0",
   OTEL_EXPORTER_OTLP_ENDPOINT: process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "http://alloy:4317",
   LOKI_HOST: process.env.LOKI_HOST ?? "http://loki:3100",
+
+  // Internal service-to-service auth
+  INTERNAL_SERVICE_SECRET: process.env.INTERNAL_SERVICE_SECRET ?? "bookstore-internal-svc-2024",
 };

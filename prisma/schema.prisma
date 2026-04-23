@@ -11,15 +11,16 @@ datasource db {
 }
 
 model Book {
-  id         String   @id @default(uuid())
-  title      String
-  author     String
-  price      Decimal  @db.Decimal(10, 2)
-  stock      Int      @default(0)
-  image_url  String?
-  image_key  String?  // S3/MinIO object key — used for deletion
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+  id          String   @id @default(uuid())
+  title       String
+  author      String
+  description String?  // Optional book description for detail page
+  price       Decimal  @db.Decimal(10, 2)
+  stock       Int      @default(0)
+  image_url   String?
+  image_key   String?  // S3/MinIO object key — used for deletion
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
 
   @@map("books")
 }

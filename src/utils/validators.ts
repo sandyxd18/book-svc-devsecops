@@ -26,6 +26,7 @@ export const createBookSchema = z.object({
       message: "Stock must be a non-negative integer",
     })
     .transform(Number),
+  description: z.string().max(2000, "Description is too long").trim().optional(),
 });
 
 export const updateBookSchema = z.object({
@@ -45,6 +46,7 @@ export const updateBookSchema = z.object({
     })
     .transform(Number)
     .optional(),
+  description: z.string().max(2000, "Description is too long").trim().optional(),
 });
 
 export const paginationSchema = z.object({
