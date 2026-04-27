@@ -96,8 +96,8 @@ NODE_ENV="development"
 # Observability
 SERVICE_NAME="book-service"
 SERVICE_VERSION="1.0.0"
-OTEL_EXPORTER_OTLP_ENDPOINT="http://alloy:4317"
-LOKI_HOST="http://loki:3100"
+OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
+LOKI_HOST="http://localhost:3100"
 ```
 
 ### 3. MinIO Setup
@@ -144,6 +144,7 @@ bun run start   # production
 | POST | `/books` | ✅ JWT | admin | Create book + upload image |
 | PUT | `/books/:id` | ✅ JWT | admin | Update book (optional image) |
 | DELETE | `/books/:id` | ✅ JWT | admin | Delete book + image |
+| PATCH | `/books/:id/deduct-stock` | ✅ Internal | service | Deduct stock (internal use) |
 
 ---
 
@@ -335,10 +336,10 @@ Deletes the book record **and** its image from MinIO.
 ## Example API Usage (curl)
 
 ```bash
-BASE=http://localhost:3001
+BASE=http://localhost:8000
 
 # 1. Login to get JWT token (via auth-service)
-TOKEN=$(curl -s -X POST http://localhost:3000/auth/login \
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"Admin@1234!"}' \
   | jq -r '.data.token')
@@ -380,7 +381,7 @@ curl $BASE/health
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                  book-service :3001                        │
+│                  book-service :8000                        │
 │                                                            │
 │  /metrics  ──────────────────────────► Prometheus          │
 │  stdout (JSON logs) ─────► Alloy ───► Loki                │
