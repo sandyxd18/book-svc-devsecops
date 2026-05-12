@@ -8,6 +8,7 @@ const required = [
   "S3_ACCESS_KEY",
   "S3_SECRET_KEY",
   "S3_BUCKET",
+  "INTERNAL_SERVICE_SECRET",
 ] as const;
 
 for (const key of required) {
@@ -44,5 +45,5 @@ export const env = {
   LOKI_HOST: process.env.LOKI_HOST ?? "http://loki:3100",
 
   // Internal service-to-service auth
-  INTERNAL_SERVICE_SECRET: process.env.INTERNAL_SERVICE_SECRET ?? "bookstore-internal-svc-2024",
+  INTERNAL_SERVICE_SECRET: process.env.INTERNAL_SERVICE_SECRET as string,
 };
