@@ -24,7 +24,11 @@ COPY bun.lockb* ./
 #       bun install; \
 #     fi
 
-RUN bun install --frozen-lockfile
+RUN if [ -f bun.lockb ]; then \
+      bun install --frozen-lockfile; \
+    else \
+      bun install; \
+    fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 2 — builder
