@@ -25,10 +25,10 @@ COPY bun.lockb* ./
 #     fi
 
 RUN if [ -f bun.lockb ]; then \
-      bun install --frozen-lockfile; \
-    else \
-      bun install; \
-    fi
+  bun install --frozen-lockfile; \
+  else \
+  bun install; \
+  fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 2 — builder
@@ -69,7 +69,7 @@ RUN apk add --no-cache openssl
 
 # Create non-root user for security
 RUN addgroup --system --gid 1001 appgroup && \
-    adduser  --system --uid 1001 --ingroup appgroup appuser
+  adduser  --system --uid 1001 --ingroup appgroup appuser
 
 # Copy only what is needed at runtime
 COPY --from=builder --chown=appuser:appgroup /app/node_modules ./node_modules
@@ -82,7 +82,7 @@ RUN chmod +x ./entrypoint.sh
 
 USER appuser
 
-EXPOSE 8000
+EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD wget -qO- http://localhost:3000/health || exit 1
